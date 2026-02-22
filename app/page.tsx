@@ -170,8 +170,8 @@ export default function Home() {
       formData.append("mode", mode);
 
       const res = await fetch("/api/roast", { method: "POST", body: formData });
-      if (!res.ok) throw new Error((await res.json()).error || "Roast failed");
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Roast failed");
       incrementUse();
       setResult(data);
     } catch (e: unknown) {
