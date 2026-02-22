@@ -20,22 +20,13 @@ export async function POST(req: NextRequest) {
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    // Dynamic import pdf-parse to avoid build issues
-    const pdfParse = (await import("pdf-parse")).default;
-    const pdf = await pdfParse(buffer);
-    const resumeText = pdf.text;
-
-    if (!resumeText || resumeText.trim().length < 50) {
-      return NextResponse.json({ error: "Could not extract enough text from PDF. Try a different file." }, { status: 400 });
-    }
+    const base64Data = Buffer.from(bytes).toString("base64");
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     const prompt = `${personalities[mode] || personalities.savage}
 
-Analyze this resume and provide a roast. Return ONLY valid JSON with this exact structure (no markdown, no code blocks):
+Analyze the uploaded resume PDF and provide a roast. Return ONLY valid JSON with this exact structure (no markdown, no code blocks, no backticks):
 {
   "overallScore": <number 1-10, be honest>,
   "verdict": "<one punchy sentence summarizing this resume>",
@@ -43,22 +34,26 @@ Analyze this resume and provide a roast. Return ONLY valid JSON with this exact 
   "strengths": ["<strength 1>", "<strength 2>"],
   "improvements": ["<improvement 1>", "<improvement 2>", "<improvement 3>"],
   "tldr": "<one brutal sentence summary>"
-}
+}`;
 
-RESUME TEXT:
-${resumeText.slice(0, 5000)}`;
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: "application/pdf",
+          data: base64Data,
+        },
+      },
+    ]);
 
-    const result = await model.generateContent(prompt);
     const text = result.response.text();
 
-    // Parse JSON from response, handling potential markdown wrapping
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return NextResponse.json({ error: "AI returned invalid response. Try again." }, { status: 500 });
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-
     return NextResponse.json(parsed);
   } catch (error: unknown) {
     console.error("Roast error:", error);
